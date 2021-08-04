@@ -343,33 +343,23 @@ export default class EthereumProvider extends BloctoProvider {
 
     attachFrame(authzFrame);
 
-    return new Promise((resolve, reject) => {
-      let pollingId: ReturnType<typeof setTimeout>;
-      const pollAuthzStatus = () => fetch(
-        `${this.server}/api/${this.chain}/authz?authorizationId=${authorizationId}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+    return new Promise((resolve, reject) =>
+      addSelfRemovableHandler('message', (event: Event, removeEventListener: Function) => {
+        const e = event as MessageEvent;
+        if (e.origin === this.server && e.data.type === 'ETH:FRAME:RESPONSE') {
+          if (e.data.status === 'APPROVED') {
+            removeEventListener();
+            detatchFrame(authzFrame);
+            resolve(e.data.txHash);
+          }
+
+          if (e.data.status === 'DECLINED') {
+            removeEventListener();
+            detatchFrame(authzFrame);
+            reject();
+          }
+        }
       })
-        .then(response => response.json())
-        .then(({ status, transactionHash }) => {
-          if (status === 'APPROVED') {
-            detatchFrame(authzFrame);
-            clearInterval(pollingId);
-
-            resolve(transactionHash);
-          }
-
-          if (status === 'DECLINED') {
-            detatchFrame(authzFrame);
-            clearInterval(pollingId);
-
-            reject('Transaction Canceled');
-          }
-        });
-
-      pollingId = setInterval(pollAuthzStatus, 1000);
-    });
+    );
   }
 }
